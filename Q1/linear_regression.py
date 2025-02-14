@@ -1,13 +1,16 @@
-# Imports - you can add any other permitted libraries
 import numpy as np
 
-# You may add any other functions to make your code more modular. However,
-# do not change the function signatures (name and arguments) of the given functions,
-# as these functions will be called by the autograder.
+def compute_cost(X, y, theta):
+    m = len(y)
+    predictions = X.dot(theta)
+    cost = (1 / (2 * m)) * np.sum((predictions - y) ** 2)
+    return cost
 
 class LinearRegressor:
     def __init__(self):
-        pass
+        self.theta = None
+        self.iterations = 1000
+        self.epsilon = 1e-15
     
     def fit(self, X, y, learning_rate=0.01):
         """
@@ -29,7 +32,26 @@ class LinearRegressor:
         List of Parameters: numpy array of shape (n_iter, n_features+1,)
             The list of parameters obtained after each iteration of Gradient Descent.
         """
-        pass
+        m, n = X.shape
+        X = np.c_[np.ones(m), X] 
+        self.theta = np.zeros(n + 1)
+        theta_history = []
+        theta_history.append(self.theta.copy())
+        J_prev = float('inf')
+        
+        for _ in range(self.iterations):
+            predictions = X.dot(self.theta)
+            errors = predictions - y
+            gradient = (1 / m) * X.T.dot(errors)
+            self.theta -= learning_rate * gradient
+            J_curr = compute_cost(X, y, self.theta)
+            theta_history.append(self.theta.copy())
+            
+            if abs(J_prev - J_curr) < self.epsilon:
+                break
+            J_prev = J_curr
+        
+        return np.array(theta_history)
     
     def predict(self, X):
         """
@@ -45,4 +67,6 @@ class LinearRegressor:
         y_pred : numpy array of shape (n_samples,)
             The predicted target values.
         """
-        pass
+        m = X.shape[0]
+        X = np.c_[np.ones(m), X]
+        return X.dot(self.theta)
