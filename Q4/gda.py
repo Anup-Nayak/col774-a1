@@ -16,18 +16,15 @@ class GaussianDiscriminantAnalysis:
         self.sigma = None
         self.sigma_0 = None
         self.sigma_1 = None
-        self.phi = None
-        self.mu_train = None
-        self.sigma_train = None
+        self.phi = None  # Class prior
         
     def normalize(self, X, use_stored_params=False):
         """
         Normalize the dataset X to have zero mean and unit variance.
         If use_stored_params is True, use the stored training mean and std.
         """
-        if use_stored_params and self.mu_train is not None and self.sigma_train is not None:
-            return (X - self.mu_train) / self.sigma_train
         return (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+    
     
     def fit(self, X, y, assume_same_covariance=False):
         """
@@ -52,9 +49,6 @@ class GaussianDiscriminantAnalysis:
             If assume_same_covariance = False - 4-tuple of numpy arrays mu_0, mu_1, sigma_0, sigma_1
             The parameters learned by the model.
         """
-        # Compute and store normalization parameters
-        self.mu_train = np.mean(X, axis=0)
-        self.sigma_train = np.std(X, axis=0)
         
         # Normalize input data
         X = self.normalize(X)
@@ -68,7 +62,11 @@ class GaussianDiscriminantAnalysis:
         
         # Compute class-wise covariance matrices
         if assume_same_covariance:
-            self.sigma = np.cov(X.T, bias=True)
+            n_0 = np.sum(y == 0)
+            n_1 = np.sum(y == 1)
+            sigma_0 = np.cov(X[y == 0].T, bias=True)
+            sigma_1 = np.cov(X[y == 1].T, bias=True)
+            self.sigma = (n_0 * sigma_0 + n_1 * sigma_1) / (n_0 + n_1)
             return self.mu_0, self.mu_1, self.sigma
         else:
             self.sigma_0 = np.cov(X[y == 0].T, bias=True)
@@ -89,15 +87,20 @@ class GaussianDiscriminantAnalysis:
         y_pred : numpy array of shape (n_samples,)
             The predicted target label.
         """
-        # Normalize input data using stored training mean and std
-        X = self.normalize(X, use_stored_params=True)
+        X = self.normalize(X)  # Normalize input data
         
-        # Compute likelihoods using Gaussian density function
-        p_x_given_y0 = multivariate_normal.pdf(X, mean=self.mu_0, cov=self.sigma if self.sigma is not None else self.sigma_0)
-        p_x_given_y1 = multivariate_normal.pdf(X, mean=self.mu_1, cov=self.sigma if self.sigma is not None else self.sigma_1)
+        if self.sigma is not None:
+            # If shared covariance is used
+            inv_sigma = np.linalg.inv(self.sigma)
+            term_0 = -0.5 * np.sum((X - self.mu_0) @ inv_sigma * (X - self.mu_0), axis=1)
+            term_1 = -0.5 * np.sum((X - self.mu_1) @ inv_sigma * (X - self.mu_1), axis=1)
+        else:
+            # If separate covariance matrices are used
+            term_0 = multivariate_normal.logpdf(X, mean=self.mu_0, cov=self.sigma_0)
+            term_1 = multivariate_normal.logpdf(X, mean=self.mu_1, cov=self.sigma_1)
+        # Compute log posterior probability
+        log_posterior_0 = term_0 + np.log(1 - self.phi)
+        log_posterior_1 = term_1 + np.log(self.phi)
         
-        # Compute posterior probabilities using Bayes' theorem
-        p_y1_given_x = (p_x_given_y1 * self.phi) / (p_x_given_y1 * self.phi + p_x_given_y0 * (1 - self.phi))
-        
-        # Predict class labels
-        return (p_y1_given_x >= 0.5).astype(int)
+        # Predict class based on higher posterior probability
+        return (log_posterior_1 > log_posterior_0).astype(int)
